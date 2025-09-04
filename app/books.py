@@ -87,7 +87,9 @@ def list_books(
                 sort: str = Query("title", pattern="^(title|author|year)$", description="Сортування за полями."),
                 order: str = Query("asc", pattern="^(asc|desc)$", description="Сортування за зростанням/спаданням."),
                 limit: int = Query(20, ge=1, le=100, description="Максимальна кількість книг у відповіді (пагінація)."),
-                offset: int = Query(0, ge=0, description="Кількість книг, які потрібно пропустити (зсув для пагінації)."),):
+                offset: int = Query(0, ge=0, description="Кількість книг, які потрібно пропустити (зсув для пагінації)."),
+                only_mine: bool = Query(False, description="Показати лише мої книги"),
+                user_id: int | None = Depends(get_current_user_id)):
 
 
     sort_map = {"title": "b.title", "author": "a.name", "year": "b.published_year"}
@@ -96,7 +98,7 @@ def list_books(
     where = []
     args = []
 
-    if q:
+    if search:
         where.append("(b.title ILIKE %s OR a.name ILIKE %s)")
         args += [f"%{search}%", f"%{search}%"]
     if author:
@@ -114,6 +116,10 @@ def list_books(
     if year_to is not None:
         where.append("b.published_year <= %s")
         args.append(year_to)
+
+    if only_mine and user_id is not None:
+        where.append("b.owner_id = %s")
+        args.append(user_id)
 
     sql = f"""
             SELECT b.id, b.title, a.name AS author, b.genre, b.published_year
@@ -149,16 +155,22 @@ def get_book(book_id: int):
 @router.put("/{book_id}", response_model=BookOut)
 def update_book(book_id: int, payload: BookIn, user_id: int = Depends(get_current_user_id)):
     with conn() as c, get_dict_cursor(c) as cur:
+        cur.execute("SELECT owner_id FROM books WHERE id=%s", (book_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Книга не знайдена.")
+
+        if row['owner_id'] != user_id:
+            raise HTTPException(status_code=403, detail="У доступі відмовлено.")
+
         author_id = _get_or_create_author(cur, payload.author)
         cur.execute(
             """UPDATE books
                SET title=%s, author_id=%s, genre=%s, published_year=%s
                WHERE id=%s
                RETURNING id""",
-            (payload.title, author_id, payload.genre.value, payload.published_year, book_id, user_id),
+            (payload.title, author_id, payload.genre.value, payload.published_year, book_id),
         )
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail="Не знайдено")
 
         cur.execute(
             """SELECT b.id, b.title, a.name AS author, b.genre, b.published_year
@@ -172,7 +184,12 @@ def update_book(book_id: int, payload: BookIn, user_id: int = Depends(get_curren
 @router.delete("/{book_id}")
 def delete_book(book_id: int, user_id: int = Depends(get_current_user_id)):
     with conn() as c, get_dict_cursor(c) as cur:
-        cur.execute("DELETE FROM books WHERE id=%s RETURNING id", (book_id, user_id))
-        if not cur.fetchone():
-            raise HTTPException(status_code=404, detail="Не знайдено")
+        cur.execute("SELECT owner_id FROM books WHERE id=%s", (book_id,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Книга не знайдена")
+        if row["owner_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Немає доступу")
+
+        cur.execute("DELETE FROM books WHERE id=%s", (book_id,))
     return {"ok": True}
