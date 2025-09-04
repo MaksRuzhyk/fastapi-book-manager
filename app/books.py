@@ -79,29 +79,57 @@ def create_book(payload: BookIn, user_id: int = Depends(get_current_user_id)):
 
 @router.get("", response_model=List[BookOut])
 def list_books(
-    q: Optional[str] = Query(None, description="Пошук у назві/авторі (ILIKE)"),
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-):
-    where, args = [], []
+                search: Optional[str] = Query(None, description="Пошук за назвою/автором."),
+                author: Optional[str] = Query(None, description="Фільтр за автором."),
+                genre: Optional[Genre] = Query(None, description="Фільтр за жанром."),
+                year_from: Optional[int] = Query(None, ge=1800, description="Мінімальний рік."),
+                year_to: Optional[int] = Query(None, ge=1800, description="Максимальний рік."),
+                sort: str = Query("title", pattern="^(title|author|year)$", description="Сортування за полями."),
+                order: str = Query("asc", pattern="^(asc|desc)$", description="Сортування за зростанням/спаданням."),
+                limit: int = Query(20, ge=1, le=100, description="Максимальна кількість книг у відповіді (пагінація)."),
+                offset: int = Query(0, ge=0, description="Кількість книг, які потрібно пропустити (зсув для пагінації)."),):
+
+
+    sort_map = {"title": "b.title", "author": "a.name", "year": "b.published_year"}
+    order_kw = "ASC" if order == "asc" else "DESC"
+
+    where = []
+    args = []
+
     if q:
         where.append("(b.title ILIKE %s OR a.name ILIKE %s)")
-        args += [f"%{q}%", f"%{q}%"]
+        args += [f"%{search}%", f"%{search}%"]
+    if author:
+        where.append("a.name ILIKE %s")
+        args.append(f"%{author}%")
+
+    if genre:
+        where.append("b.genre = %s")
+        args.append(genre.value)
+
+    if year_from is not None:
+        where.append("b.published_year >= %s")
+        args.append(year_from)
+
+    if year_to is not None:
+        where.append("b.published_year <= %s")
+        args.append(year_to)
 
     sql = f"""
-        SELECT b.id, b.title, a.name AS author, b.genre, b.published_year
-        FROM books b
-        JOIN authors a ON a.id = b.author_id
-        {"WHERE " + " AND ".join(where) if where else ""}
-        ORDER BY b.title
-        LIMIT %s OFFSET %s
-    """
+            SELECT b.id, b.title, a.name AS author, b.genre, b.published_year
+            FROM books b
+            JOIN authors a ON a.id = b.author_id
+            {"WHERE " + " AND ".join(where) if where else ""}
+            ORDER BY {sort_map[sort]} {order_kw}
+            LIMIT %s OFFSET %s
+        """
     args += [limit, offset]
 
     with conn() as c, get_dict_cursor(c) as cur:
         cur.execute(sql, args)
         rows = cur.fetchall()
-        return [_row_to_out(r) for r in rows]
+        return [BookOut(**r) for r in rows]
+
 
 @router.get("/{book_id}", response_model=BookOut)
 def get_book(book_id: int):
