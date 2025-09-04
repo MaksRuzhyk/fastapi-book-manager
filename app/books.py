@@ -3,10 +3,11 @@ from enum import Enum
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field, field_validator
 from psycopg.errors import UniqueViolation
 
+from app.auth import get_current_user_id
 from app.db import conn, get_dict_cursor
 
 router = APIRouter(prefix="/books", tags=["books"])
@@ -59,10 +60,10 @@ def _row_to_out(r) -> BookOut:
     return BookOut(**r)
 
 # ENDPOINTS
-OWNER_ID_DEFAULT = 1  # тимчасово
+
 
 @router.post("", response_model=BookOut)
-def create_book(payload: BookIn):
+def create_book(payload: BookIn, user_id: int = Depends(get_current_user_id)):
     try:
         with conn() as c, get_dict_cursor(c) as cur:
             author_id = _get_or_create_author(cur, payload.author)
@@ -70,7 +71,7 @@ def create_book(payload: BookIn):
                 """INSERT INTO books(title, author_id, genre, published_year, owner_id)
                    VALUES (%s,%s,%s,%s,%s)
                    RETURNING id, title, %s AS author, genre, published_year""",
-                (payload.title, author_id, payload.genre.value, payload.published_year, OWNER_ID_DEFAULT, payload.author),
+                (payload.title, author_id, payload.genre.value, payload.published_year, user_id, payload.author),
             )
             return _row_to_out(cur.fetchone())
     except UniqueViolation:
@@ -118,7 +119,7 @@ def get_book(book_id: int):
         return _row_to_out(r)
 
 @router.put("/{book_id}", response_model=BookOut)
-def update_book(book_id: int, payload: BookIn):
+def update_book(book_id: int, payload: BookIn, user_id: int = Depends(get_current_user_id)):
     with conn() as c, get_dict_cursor(c) as cur:
         author_id = _get_or_create_author(cur, payload.author)
         cur.execute(
@@ -126,7 +127,7 @@ def update_book(book_id: int, payload: BookIn):
                SET title=%s, author_id=%s, genre=%s, published_year=%s
                WHERE id=%s
                RETURNING id""",
-            (payload.title, author_id, payload.genre.value, payload.published_year, book_id),
+            (payload.title, author_id, payload.genre.value, payload.published_year, book_id, user_id),
         )
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Не знайдено")
@@ -141,9 +142,9 @@ def update_book(book_id: int, payload: BookIn):
         return _row_to_out(cur.fetchone())
 
 @router.delete("/{book_id}")
-def delete_book(book_id: int):
+def delete_book(book_id: int, user_id: int = Depends(get_current_user_id)):
     with conn() as c, get_dict_cursor(c) as cur:
-        cur.execute("DELETE FROM books WHERE id=%s RETURNING id", (book_id,))
+        cur.execute("DELETE FROM books WHERE id=%s RETURNING id", (book_id, user_id))
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Не знайдено")
     return {"ok": True}
