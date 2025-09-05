@@ -1,0 +1,20 @@
+[
+  {
+    "title": "Dune",
+    "author": "Frank Herbert",
+    "genre": "Fiction",
+    "published_year": 1965
+  },
+  {
+    "title": "Sapiens",
+    "author": "Yuval Noah Harari",
+    "genre": "History",
+    "published_year": 2011
+  },
+  {
+    "title": "A Brief History of Time",
+    "author": "Stephen Hawking",
+    "genre": "Science",
+    "published_year": 1988
+  }
+]
