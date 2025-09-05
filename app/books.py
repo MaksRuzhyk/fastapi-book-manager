@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 CURRENT_YEAR = datetime.now().year
-TITLE_RE  = re.compile(r"^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9\s\"']+$")
+TITLE_RE  = re.compile(r"^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9\s\"'\-]+$")
 AUTHOR_RE = re.compile(r"^[A-Za-zА-Яа-яІіЇїЄєҐґ\s]+$")
 
 class Genre(str, Enum):

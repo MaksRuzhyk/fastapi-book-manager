@@ -79,7 +79,7 @@ def list_books(
         rows = cur.fetchall()
         return [BookOut(**r) for r in rows]
 
-@router.get("/by-owner", response_model=List[BookOut])
+@router.get("/by-owner", response_model=List[BookOut], description="Повертає всі книги поточного користувача (за owner_id).")
 def list_my_books(user_id: int = Depends(get_current_user_id)):
     sql = """
         SELECT b.id, b.title, a.name AS author, b.genre, b.published_year
