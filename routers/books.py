@@ -93,7 +93,7 @@ def list_my_books(user_id: int = Depends(get_current_user_id)):
         rows = cur.fetchall()
         return [row_to_out(r) for r in rows]
 
-@router.get("/{book_id}", response_model=BookOut)
+@router.get("/id/{book_id}", response_model=BookOut)
 def get_book(book_id: int):
     with conn() as c, get_dict_cursor(c) as cur:
         cur.execute(
